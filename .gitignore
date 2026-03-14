@@ -26,3 +26,7 @@ Thumbs.db
 
 # Vault data (don't commit your actual vault)
 vault/
+
+# Config (user-specific)
+vault-viewer.yml
+vault-viewer.yaml

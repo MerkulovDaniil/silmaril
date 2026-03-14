@@ -11,7 +11,7 @@ If your vault lives on a VPS or a desktop machine and you want to access it from
 
 This viewer takes a different approach: **your vault stays in one place, you access it from anywhere**. Point it at a directory, open a URL — browse, search, edit. It just works.
 
-It renders most of what Obsidian renders: wiki-links, embeds, callouts, KaTeX math, frontmatter properties, cover images, Bases, Iconic plugin icons. It won't replace Obsidian for heavy workflows with lots of plugins or complex Dataview queries, but for reading, quick edits, and staying on top of your notes from a phone — it's a lifesaver.
+It renders most of what Obsidian renders: wiki-links, embeds, callouts, KaTeX math, frontmatter properties, cover images, Bases, Iconic plugin icons. In fact, it sometimes renders vaults better than Obsidian itself — I've seen it handle super long files and deeply nested folders that the Obsidian app renders broken. It won't replace Obsidian for heavy workflows with lots of plugins or complex Dataview queries, but for reading, quick edits, and staying on top of your notes from a phone — it's a lifesaver.
 
 ## Features
 
@@ -28,22 +28,39 @@ It renders most of what Obsidian renders: wiki-links, embeds, callouts, KaTeX ma
 - **Code blocks** with copy button
 - **File tree** sidebar with collapsible folders
 
-## Quick Start
+## Installation
 
 ```bash
-pip install -r requirements.txt
-python app.py --vault /path/to/your/vault
+pip install obsidian-vault-viewer
+```
+
+Then run:
+
+```bash
+vault-viewer --vault /path/to/your/vault
 ```
 
 Open [http://localhost:8000](http://localhost:8000) in your browser.
 
-### One-liner
+### From source
 
 ```bash
-pip install fastapi uvicorn python-frontmatter markdown pyyaml && python app.py --vault /path/to/vault
+git clone https://github.com/MerkulovDaniil/vault-viewer.git
+cd vault-viewer
+pip install .
+vault-viewer --vault /path/to/your/vault
+```
+
+Or run directly without installing:
+
+```bash
+pip install fastapi uvicorn python-frontmatter markdown pyyaml
+python app.py --vault /path/to/vault
 ```
 
 ## Configuration
+
+### CLI arguments
 
 | CLI argument | Env variable   | Default      | Description                      |
 |-------------|----------------|--------------|----------------------------------|
@@ -52,7 +69,18 @@ pip install fastapi uvicorn python-frontmatter markdown pyyaml && python app.py 
 | `--port`    | `VAULT_PORT`   | `8000`       | Bind port                        |
 | `--title`   | `VAULT_NAME`   | folder name  | App title shown in the sidebar   |
 
-CLI arguments take precedence over environment variables.
+### Config file
+
+You can place a `vault-viewer.yml` (or `vault-viewer.yaml`) file in the working directory:
+
+```yaml
+vault: /path/to/vault
+host: 0.0.0.0
+port: 8000
+title: My Vault
+```
+
+**Priority**: CLI args > config file > environment variables > defaults.
 
 ## Authentication
 
@@ -72,8 +100,7 @@ Description=Obsidian Vault Viewer
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/python3 /opt/vault-viewer/app.py --vault /path/to/vault --port 8000
-WorkingDirectory=/opt/vault-viewer
+ExecStart=vault-viewer --vault /path/to/vault --port 8000
 Restart=always
 
 [Install]
@@ -85,11 +112,11 @@ WantedBy=multi-user.target
 ```dockerfile
 FROM python:3.12-slim
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY app.py .
+COPY pyproject.toml app.py ./
+COPY vault_viewer/ vault_viewer/
+RUN pip install --no-cache-dir .
 EXPOSE 8000
-CMD ["python", "app.py", "--vault", "/vault"]
+CMD ["vault-viewer", "--vault", "/vault"]
 ```
 
 ```bash

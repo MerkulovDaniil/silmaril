@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "obsidian-vault-viewer"
+version = "0.1.0"
+description = "Self-hosted, mobile-first web UI for browsing and editing Obsidian vaults"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    { name = "Daniil Merkulov", email = "bratishka.mipt@gmail.com" },
+]
+keywords = ["obsidian", "vault", "viewer", "markdown", "notes"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Framework :: FastAPI",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Text Processing :: Markup :: Markdown",
+]
+dependencies = [
+    "fastapi>=0.100.0",
+    "uvicorn>=0.20.0",
+    "python-frontmatter>=1.0.0",
+    "markdown>=3.4",
+    "pyyaml>=6.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/MerkulovDaniil/vault-viewer"
+Repository = "https://github.com/MerkulovDaniil/vault-viewer"
+
+[project.scripts]
+vault-viewer = "vault_viewer:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["vault_viewer*"]
+
+[tool.setuptools.package-data]
+vault_viewer = ["static/*"]

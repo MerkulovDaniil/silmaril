@@ -261,19 +261,19 @@ def render_md(content: str) -> str:
     content = render_autolinks(content)
     content = re.sub(r'==(.*?)==', r'<mark>\1</mark>', content)
     content = re.sub(r'(?<!\w)#([a-zA-Z0-9_/\u0400-\u04FF\-]+)', r'⟨TAG:\1⟩', content)
+    # Convert checkboxes before markdown so they survive any wrapping
+    content = re.sub(r'^(\s*[-*]\s*)\[ \]', r'\1⟨CB:unchecked⟩', content, flags=re.MULTILINE)
+    content = re.sub(r'^(\s*[-*]\s*)\[[xX]\]', r'\1⟨CB:checked⟩', content, flags=re.MULTILINE)
     html = markdown.markdown(content, extensions=[
         'tables', 'fenced_code', 'codehilite', 'toc', 'nl2br', 'sane_lists', 'smarty'
     ])
     html = re.sub(r'⟨TAG:(.+?)⟩', r'<span class="tag">#\1</span>', html)
-    html = _restore_math(html)  # put LaTeX back
+    html = _restore_math(html)
     html = html.replace("<table", '<div class="table-wrap"><table').replace("</table>", "</table></div>")
-    # Checkbox: match <li>[ ] and <li><p>[ ] variants, add task-item class
-    html = html.replace("<li>[ ]", '<li class="task-item"><input type="checkbox">')
-    html = html.replace("<li>[x]", '<li class="task-item"><input type="checkbox" checked>')
-    html = html.replace("<li>[X]", '<li class="task-item"><input type="checkbox" checked>')
-    html = html.replace("<li><p>[ ]", '<li class="task-item"><p><input type="checkbox">')
-    html = html.replace("<li><p>[x]", '<li class="task-item"><p><input type="checkbox" checked>')
-    html = html.replace("<li><p>[X]", '<li class="task-item"><p><input type="checkbox" checked>')
+    # Restore checkboxes and add task-item class to parent <li>
+    html = html.replace("⟨CB:unchecked⟩", '<input type="checkbox">')
+    html = html.replace("⟨CB:checked⟩", '<input type="checkbox" checked>')
+    html = re.sub(r'<li>(\s*(?:<p>)?\s*<input type="checkbox")', r'<li class="task-item">\1', html)
     return html
 
 

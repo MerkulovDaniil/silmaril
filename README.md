@@ -1,9 +1,17 @@
 # Obsidian Vault Viewer
 
-A self-hosted, mobile-first web UI for browsing Obsidian vaults. Inspired by [notion4ever](https://github.com/MerkulovDaniil/notion4ever).
+A self-hosted, mobile-first web UI for browsing and editing Obsidian vaults from any device. Single Python file, zero config. Inspired by [notion4ever](https://github.com/MerkulovDaniil/notion4ever).
 
 ![Screenshot](screenshot.png)
 <!-- Replace screenshot.png with an actual screenshot of your vault -->
+
+## Why?
+
+If your vault lives on a VPS or a desktop machine and you want to access it from your phone or any browser — this is for you. All my attempts to sync vaults across devices (Remotely Save, third-party sync plugins) kept failing with conflicts and silent data loss. Obsidian Sync works, but costs money and requires the app on every device.
+
+This viewer takes a different approach: **your vault stays in one place, you access it from anywhere**. Point it at a directory, open a URL — browse, search, edit. It just works.
+
+It renders most of what Obsidian renders: wiki-links, embeds, callouts, KaTeX math, frontmatter properties, cover images, Bases, Iconic plugin icons. It won't replace Obsidian for heavy workflows with lots of plugins or complex Dataview queries, but for reading, quick edits, and staying on top of your notes from a phone — it's a lifesaver.
 
 ## Features
 

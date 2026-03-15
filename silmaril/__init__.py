@@ -654,10 +654,10 @@ def render_base_cards(entries: list[dict], image_field: str = "", aspect: float 
                 cover = resolve_img(str(e["meta"][prop]))
 
         if cover:
-            h = int(120 / aspect) if aspect else 120
-            cover_html = f'<div class="card-cover" style="height:{min(h, 240)}px"><img src="{cover}" loading="lazy"></div>'
+            ar_style = f"aspect-ratio:{1/aspect:.2f}" if aspect else "aspect-ratio:2"
+            cover_html = f'<div class="card-cover" style="{ar_style}"><img src="{cover}" loading="lazy"></div>'
         else:
-            cover_html = '<div class="card-cover" style="height:80px;background:var(--bg2);display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:24px;">&#128196;</div>'
+            cover_html = '<div class="card-cover card-cover-empty"><span>&#128196;</span></div>'
 
         badges_html = ""
         for s in e["status"][:2]:

@@ -7,6 +7,9 @@ RUN pip install --no-cache-dir .
 
 COPY docs/ /docs-pristine/
 COPY docs/ /docs/
+
+ENV RESET_DIR=/docs-pristine
+
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 

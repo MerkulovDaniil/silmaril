@@ -1196,6 +1196,29 @@ async def remove_icon_api(file_path: str):
     return JSONResponse({"ok": True})
 
 
+import shutil
+
+@app.post("/api/reset")
+async def reset_docs():
+    """Reset vault from pristine copy (playground mode). Requires RESET_DIR env var."""
+    reset_dir = os.environ.get("RESET_DIR")
+    if not reset_dir:
+        raise HTTPException(404, "Not in playground mode")
+    src = Path(reset_dir)
+    if not src.is_dir():
+        raise HTTPException(500, "RESET_DIR not found")
+    # Clear vault and copy pristine
+    for item in VAULT_ROOT.iterdir():
+        if item.is_dir():
+            shutil.rmtree(item)
+        else:
+            item.unlink()
+    shutil.copytree(src, VAULT_ROOT, dirs_exist_ok=True)
+    global _icon_cache
+    _icon_cache = None
+    return JSONResponse({"ok": True, "reset": True})
+
+
 # --- Catch-all: clean URLs (MUST be last route) ---
 
 @app.get("/{file_path:path}", response_class=HTMLResponse)

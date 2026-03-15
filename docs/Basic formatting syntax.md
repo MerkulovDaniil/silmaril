@@ -1,12 +1,3 @@
----
-status: active
-tags:
-  - syntax
-  - markdown
----
-
-# Basic formatting syntax
-
 Learn how to apply basic formatting to your notes, using [Markdown](https://daringfireball.net/projects/markdown/). For more advanced formatting syntax, refer to [[Advanced formatting syntax]].
 
 ## Paragraphs

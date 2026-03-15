@@ -1,12 +1,3 @@
----
-status: active
-tags:
-  - syntax
-  - markdown
----
-
-# Advanced formatting syntax
-
 Learn how to add advanced formatting syntax to your notes.
 
 ## Tables

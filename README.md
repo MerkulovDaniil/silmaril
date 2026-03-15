@@ -87,6 +87,7 @@ host: 0.0.0.0
 port: 8000
 title: My Vault
 
+theme: Things          # any Obsidian community theme by name
 favicon: https://example.com/icon.png
 custom_css: "body { font-size: 18px; }"
 pinch_zoom: true
@@ -97,6 +98,31 @@ hide:
 ```
 
 **Priority**: CLI args > config file > environment variables > defaults.
+
+## Themes
+
+Silmaril supports all [416 Obsidian community themes](https://github.com/obsidianmd/obsidian-releases/blob/master/community-css-themes.json) out of the box. Just set the theme name in your config:
+
+```yaml
+theme: Things
+```
+
+The CSS is fetched from GitHub on first launch and cached locally in `~/.cache/silmaril/themes/`.
+
+Some popular themes to try:
+
+| Theme | Style |
+|-------|-------|
+| `Things` | Clean, minimal, Apple-inspired |
+| `Obsidian Nord` | Nord color palette |
+| `Obsidian gruvbox` | Retro groove colors |
+| `Dracula for Obsidian` | Dark purple Dracula |
+| `Atom` | Atom editor look |
+| `Solarized` | Ethan Schoonover's palette |
+| `80s Neon` | Synthwave vibes |
+| `Notation` | Bear app inspired |
+
+Without a `theme` setting, Silmaril uses Obsidian's default theme colors.
 
 ## Authentication
 

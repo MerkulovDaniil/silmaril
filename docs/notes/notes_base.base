@@ -1,0 +1,15 @@
+{
+  "name": "Notes",
+  "fieldOrder": ["name", "tags"],
+  "fields": {
+    "name": {"type": "text", "source": "fileName"},
+    "tags": {"type": "tags", "source": "frontmatter:tags"}
+  },
+  "filters": [],
+  "sort": {"field": "name", "order": "asc"},
+  "views": [
+    {"name": "List", "type": "list"},
+    {"name": "Cards", "type": "cards"}
+  ],
+  "source": "folder"
+}

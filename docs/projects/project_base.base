@@ -1,0 +1,17 @@
+{
+  "name": "Projects",
+  "fieldOrder": ["name", "status", "tags"],
+  "fields": {
+    "name": {"type": "text", "source": "fileName"},
+    "status": {"type": "tags", "source": "frontmatter:status"},
+    "tags": {"type": "tags", "source": "frontmatter:tags"}
+  },
+  "filters": [],
+  "sort": {"field": "name", "order": "asc"},
+  "views": [
+    {"name": "Cards", "type": "cards"},
+    {"name": "Table", "type": "table"},
+    {"name": "List", "type": "list"}
+  ],
+  "source": "folder"
+}

@@ -17,7 +17,7 @@ Silmaril is a self-hosted, mobile-first web UI for [Obsidian](https://obsidian.m
 This entire site **is** Silmaril. Everything you see is rendered from plain markdown files.
 
 > [!tip] This is a live playground
-> You can edit any page, change icons, search — go ahead and break things. Every 15 minutes this site resets from the repository.
+> You can edit any page, change icons, search — go ahead and break things. Every 15 minutes this site rebuilds from the repository.
 
 ## Quick start
 
@@ -37,11 +37,31 @@ Open `http://localhost:8000` — done.
 | Can't read notes on phone without the app | Any browser works |
 | Complex setup with databases and configs | `pip install` and one command |
 
-## Explore
+## Explore the docs
 
 - [[Features]] — what Silmaril renders
 - [[Basic formatting syntax]] — headings, lists, links, images, code
 - [[Advanced formatting syntax]] — tables, footnotes, math, diagrams
-- [[Configuration]] — CLI args, config file, environment variables
+- [[Configuration]] — CLI args, config file, themes
 - [[Deployment]] — systemd, Docker, cloud
 - [[Icon Editing]] — native icon picker for Obsidian Iconic plugin
+
+## Example content
+
+Browse these to see Silmaril in action:
+
+**Projects** (folder with database views — cards, table, list):
+- [[Silmaril]] — this project
+- [[Research Paper]] — math, LaTeX, checklists
+- [[Course Website]] — tables, status badges
+- [[Home Automation]] — callouts, frozen status
+
+**Notes**:
+- [[Python Snippets]] — code blocks with syntax highlighting
+- [[Math Cheatsheet]] — inline and display KaTeX
+- [[Meeting Notes]] — callouts, tables, todos
+- [[Reading List]] — checkboxes, highlights, blockquotes
+
+**Resources**:
+- [[Sample Image]] — images, galleries, banners
+- [[Cheat Sheet PDF]] — file types and serving

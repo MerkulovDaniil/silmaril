@@ -52,7 +52,6 @@ body {
     color: var(--text);
     line-height: 1.6;
     min-height: 100vh;
-    display: flex;
     overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
 }
@@ -118,8 +117,8 @@ body {
     width: 280px; max-width: 85vw;
     background: var(--bg2);
     border-right: 1px solid var(--border);
-    height: 100vh; height: 100dvh;
-    position: fixed; left: 0; top: 0;
+    height: calc(100vh - 36px); height: calc(100dvh - 36px);
+    position: fixed; left: 0; top: 36px;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
@@ -131,17 +130,9 @@ body {
 }
 .sidebar.open { transform: translateX(0); box-shadow: 2px 0 12px rgba(0,0,0,0.1); }
 
-.sidebar-hdr {
-    padding: 14px 16px;
-    border-bottom: 1px solid var(--border);
-    font-weight: 600; font-size: 14px; color: var(--text2);
-    display: flex; align-items: center; gap: 6px;
-}
-.sidebar-hdr a { color: var(--text); text-decoration: none; }
+.sidebar-hdr { display: none; }
 
-/* === Overlay === */
-.overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.15); z-index: 150; }
-.overlay.open { display: block; }
+/* === Overlay (removed — sidebar has no backdrop) === */
 
 /* === Bookmarks === */
 .bookmarks {
@@ -173,15 +164,13 @@ body {
 
 /* === Main - no sidebar offset === */
 .main-wrapper {
-    margin-left: 0;
-    flex: 1; min-height: 100vh;
-    display: flex; justify-content: center;
+    min-height: 100vh;
     background: var(--bg);
     padding-top: 36px;
 }
 .main {
-    width: 100%;
     max-width: var(--content-w);
+    margin: 0 auto;
     padding: 0 32px 40px;
     overflow-wrap: break-word; word-wrap: break-word; min-width: 0;
 }
@@ -193,24 +182,22 @@ body {
 .breadcrumb a:hover { color: var(--text); }
 .breadcrumb span.sep { margin: 0 4px; color: var(--border); }
 
-/* === Cover + Icon (notion4ever style) === */
+/* === Cover + Icon === */
 .cover {
-    width: 100vw;
-    position: relative;
-    left: 50%;
-    transform: translateX(-50%);
-    margin-bottom: 0;
+    width: 100%;
 }
-.cover img { width: 100%; height: 200px; object-fit: cover; display: block; }
+.cover img { width: 100%; height: 200px; object-fit: cover; display: block; margin: 0; }
 .page-icon {
     font-size: 78px; line-height: 1;
     position: relative; z-index: 1;
-    top: -39px; margin-bottom: -35px;
+    margin-bottom: 4px;
     width: fit-content;
+}
+.has-cover > .page-icon:first-child {
+    margin-top: -39px;
 }
 .page-icon .lucide-icon { width: 72px; height: 72px; }
 .page-icon img { width: 78px; height: 78px; object-fit: cover; border-radius: 8px; }
-.no-cover .page-icon { top: 0; margin-bottom: 4px; }
 
 /* === Badges === */
 .badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
@@ -447,13 +434,22 @@ div.footnote li { margin: 4px 0; }
 .canvas-node p { margin: 2px 0; }
 .canvas-node a { color: var(--accent); }
 
+/* === Desktop sidebar push === */
+@media (min-width: 769px) {
+    .path-header { transition: left 0.2s; }
+    .main-wrapper { transition: margin-left 0.2s; }
+    .sidebar.open ~ .path-header { left: 280px; }
+    .sidebar.open ~ .main-wrapper { margin-left: 280px; }
+}
+
 /* === Mobile === */
 @media (max-width: 768px) {
     .main-wrapper { margin-left: 0; }
     .main { padding: 10px 14px 30px; max-width: 100vw; width: 100%; }
-    .cover { width: 100vw; left: 50%; transform: translateX(-50%); }
+    .cover { width: 100%; }
     .cover img { height: 140px; }
-    .page-icon { font-size: 56px; line-height: 56px; top: -28px; margin-bottom: -24px; }
+    .page-icon { font-size: 56px; line-height: 56px; }
+    .has-cover > .page-icon:first-child { margin-top: -28px; }
     .page-icon .lucide-icon { width: 52px; height: 52px; }
     .md h1 { font-size: 1.5em; }
     .md h2 { font-size: 1.25em; }

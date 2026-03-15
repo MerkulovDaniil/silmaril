@@ -1084,7 +1084,7 @@ def build_tree_html(items: list[dict], depth: int = 0, current_path: str = "") -
     return html
 
 
-def layout(title: str, content: str, current_path: str = "", toast: str = "", page_icon: str = "") -> HTMLResponse:
+def layout(title: str, content: str, current_path: str = "", toast: str = "", page_icon: str = "", cover_html: str = "", main_cls: str = "") -> HTMLResponse:
     tree = get_file_tree(VAULT_ROOT)
     tree_html = build_tree_html(tree, current_path=current_path)
     bookmarks_html = build_bookmarks_html(current_path)
@@ -1170,7 +1170,6 @@ def layout(title: str, content: str, current_path: str = "", toast: str = "", pa
 {custom_head}
 </head>
 <body>
-<div class="overlay"></div>
 <div class="path-header">
     <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle sidebar">{hamburger_svg}</button>
     <div class="path-header-bc">{bc_inner}</div>
@@ -1189,8 +1188,8 @@ def layout(title: str, content: str, current_path: str = "", toast: str = "", pa
     <div class="tree">{tree_html}</div>
 </nav>
 <div class="main-wrapper">
-<main class="main">
-    {content}
+{cover_html}<main class="main {main_cls}">
+{content}
 </main>
 </div>
 {toast_html}
@@ -1539,7 +1538,6 @@ async def _render_file(file_path: str, toast: str = "", tab: int = 0,
     md_html = render_md(post.content, file_path)
 
     content = (
-        f'{parts["cover"]}'
         f'{parts["icon"]}'
         f'<div class="{wrapper_cls}">'
         f'{page_title}'
@@ -1549,7 +1547,8 @@ async def _render_file(file_path: str, toast: str = "", tab: int = 0,
         f'<div class="md">{md_html}</div>'
     )
     page_icon = get_raw_icon(file_path)
-    return layout(fp.name, content, file_path, toast=toast, page_icon=page_icon)
+    main_cls = "has-cover" if has_cover else ""
+    return layout(fp.name, content, file_path, toast=toast, page_icon=page_icon, cover_html=parts["cover"], main_cls=main_cls)
 
 
 @app.post("/save/{file_path:path}")

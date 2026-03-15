@@ -4,24 +4,19 @@ document.addEventListener('click', function(e) {
     if (item) { e.preventDefault(); item.parentElement.classList.toggle('open'); }
 });
 
-// Sidebar toggle - always overlay mode
-document.getElementById('sidebar-toggle').addEventListener('click', function(e) {
-    e.stopPropagation();
-    document.querySelector('.sidebar').classList.toggle('open');
-    document.querySelector('.overlay').classList.toggle('open');
-});
-document.querySelector('.overlay').addEventListener('click', function() {
-    document.querySelector('.sidebar').classList.remove('open');
-    this.classList.remove('open');
-});
-
-// Close sidebar on nav click
-document.querySelectorAll('.sidebar a').forEach(function(a) {
-    a.addEventListener('click', function() {
-        document.querySelector('.sidebar').classList.remove('open');
-        document.querySelector('.overlay').classList.remove('open');
+// Sidebar toggle — no overlay, persists via localStorage
+(function() {
+    var sidebar = document.querySelector('.sidebar');
+    var btn = document.getElementById('sidebar-toggle');
+    if (!sidebar || !btn) return;
+    // Restore state
+    if (localStorage.getItem('sidebar-open') === '1') sidebar.classList.add('open');
+    btn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        sidebar.classList.toggle('open');
+        localStorage.setItem('sidebar-open', sidebar.classList.contains('open') ? '1' : '0');
     });
-});
+})();
 
 // Search (Fuse.js client-side)
 (function() {
@@ -35,6 +30,7 @@ document.querySelectorAll('.sidebar a').forEach(function(a) {
     btn.addEventListener('click', function(e) {
         e.stopPropagation();
         var open = input.classList.toggle('open');
+        btn.style.display = open ? 'none' : '';
         if (open) {
             input.focus();
             if (!indexLoaded) loadIndex();
@@ -47,6 +43,7 @@ document.querySelectorAll('.sidebar a').forEach(function(a) {
         if (!e.target.closest('.search-container')) {
             input.classList.remove('open');
             dropdown.classList.remove('open');
+            btn.style.display = '';
         }
     });
 
@@ -83,6 +80,7 @@ document.querySelectorAll('.sidebar a').forEach(function(a) {
         if (e.key === 'Escape') {
             input.classList.remove('open');
             dropdown.classList.remove('open');
+            btn.style.display = '';
         }
     });
 })();

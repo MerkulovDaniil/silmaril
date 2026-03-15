@@ -1,4 +1,0 @@
-include LICENSE
-include README.md
-include app.py
-recursive-include silmaril/static *

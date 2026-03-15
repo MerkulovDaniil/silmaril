@@ -421,10 +421,34 @@ def _restore_math(html: str) -> str:
         html = html.replace(f'⟨MATH:{i}⟩', orig)
     return html
 
-def render_md(content: str) -> str:
+def _resolve_md_images(content: str, file_path: str) -> str:
+    """Resolve ![](path) image paths relative to the file or vault root."""
+    if not file_path:
+        return content
+    file_dir = Path(file_path).parent
+
+    def _fix_img(m):
+        alt = m.group(1)
+        src = m.group(2).strip()
+        if src.startswith("http") or src.startswith("/"):
+            return m.group(0)
+        # Try vault-root relative first
+        if (VAULT_ROOT / src).exists():
+            return f'![{alt}](/static/{src})'
+        # Try file-relative
+        rel = file_dir / src
+        if (VAULT_ROOT / rel).exists():
+            return f'![{alt}](/static/{rel})'
+        return m.group(0)
+
+    return re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', _fix_img, content)
+
+
+def render_md(content: str, file_path: str = "") -> str:
     # Strip Obsidian comments %%...%%
     content = re.sub(r'%%.*?%%', '', content, flags=re.DOTALL)
     content = _protect_math(content)  # protect LaTeX from markdown
+    content = _resolve_md_images(content, file_path)
     content = render_embeds(content)
     content = render_callouts(content)
     content = render_wiki_links(content)
@@ -1496,7 +1520,7 @@ async def _render_file(file_path: str, toast: str = "", tab: int = 0,
 
     page_title = f'<h1 style="font-size:2em;font-weight:700;margin:0 0 0.3em;font-family:var(--font)">{_escape(title)}</h1>'
 
-    md_html = render_md(post.content)
+    md_html = render_md(post.content, file_path)
 
     content = (
         f'{parts["cover"]}'

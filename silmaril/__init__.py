@@ -29,6 +29,7 @@ CONFIG = {
     "pinch_zoom": True,     # Allow pinch-to-zoom on mobile
     "readonly": False,      # Disable edit/delete
     "theme": "",            # Obsidian community theme name (e.g. "Things", "Dracula")
+    "bookmarks": [],        # List of bookmarked paths shown at sidebar top (e.g. ["projects/", "inbox.md"])
 }
 
 # --- Theme loading ---
@@ -972,6 +973,36 @@ JS = (Path(__file__).parent / "static" / "script.js").read_text()
 
 # --- HTML helpers ---
 
+def build_bookmarks_html(current_path: str = "") -> str:
+    """Render bookmarks section from config."""
+    bm_list = CONFIG.get("bookmarks", [])
+    if not bm_list:
+        return ""
+    items = ""
+    for entry in bm_list:
+        if isinstance(entry, str):
+            path, label = entry, None
+        elif isinstance(entry, dict):
+            path = entry.get("path", "")
+            label = entry.get("name")
+        else:
+            continue
+        if not path:
+            continue
+        fp = VAULT_ROOT / path
+        if not fp.exists():
+            continue
+        if not label:
+            label = fp.stem if fp.is_file() else fp.name
+        raw = get_raw_icon(path) if fp.is_file() or fp.is_dir() else ""
+        icon = get_icon_html(path, "") if raw else ""
+        active = "active" if path == current_path else ""
+        items += f'<a class="tree-item bm-item {active}" href="/{path}">{icon}{_escape(label)}</a>'
+    if not items:
+        return ""
+    return f'<div class="bookmarks">{items}</div>'
+
+
 def build_tree_html(items: list[dict], depth: int = 0, current_path: str = "") -> str:
     html = ""
     for item in items:
@@ -994,6 +1025,7 @@ def build_tree_html(items: list[dict], depth: int = 0, current_path: str = "") -
 def layout(title: str, content: str, current_path: str = "", toast: str = "", page_icon: str = "") -> HTMLResponse:
     tree = get_file_tree(VAULT_ROOT)
     tree_html = build_tree_html(tree, current_path=current_path)
+    bookmarks_html = build_bookmarks_html(current_path)
 
     bc_inner = f'<a href="/">{APP_TITLE}</a>'
     edit_actions = ""
@@ -1078,6 +1110,7 @@ def layout(title: str, content: str, current_path: str = "", toast: str = "", pa
     <div class="sidebar-hdr"><a href="/">&#128218; {APP_TITLE}</a></div>
     <div class="sidebar-search"><input type="text" id="sidebar-search" placeholder="Search..." autocomplete="off"></div>
     <div class="search-results"></div>
+    {bookmarks_html}
     <div class="tree">{tree_html}</div>
 </nav>
 <div class="main-wrapper">

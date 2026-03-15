@@ -225,6 +225,10 @@ body {
     color: rgb(var(--callout-color));
 }
 .callout-lucide { width: 18px; height: 18px; flex-shrink: 0; stroke: rgb(var(--callout-color)); }
+.callout-fold { width: 18px; height: 18px; flex-shrink: 0; margin-left: auto; stroke: rgb(var(--callout-color)); transition: transform 0.15s; }
+details.callout > summary { cursor: pointer; list-style: none; }
+details.callout > summary::-webkit-details-marker { display: none; }
+details.callout[open] .callout-fold { transform: rotate(90deg); }
 .callout-body { font-size: 14px; }
 .callout-body p { margin: 3px 0; }
 

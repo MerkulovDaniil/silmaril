@@ -325,19 +325,31 @@ def render_callouts(text: str) -> str:
         icon_html = f'<i data-lucide="{meta[0]}" class="callout-lucide"></i>'
         color = meta[1]
         bhtml = markdown.markdown("\n".join(body), extensions=['tables', 'fenced_code', 'sane_lists'])
-        result.append(
-            f'<div class="callout" style="--callout-color: {color};">'
-            f'<div class="callout-title">{icon_html} {c_title or c_type.capitalize()}</div>'
-            f'<div class="callout-body">{bhtml}</div></div>')
+        if c_fold:
+            # Foldable callout
+            open_attr = " open" if c_fold == "+" else ""
+            result.append(
+                f'<details class="callout" style="--callout-color: {color};"{open_attr}>'
+                f'<summary class="callout-title">{icon_html} {c_title or c_type.capitalize()}'
+                f'<i data-lucide="chevron-right" class="callout-fold"></i></summary>'
+                f'<div class="callout-body">{bhtml}</div></details>')
+        else:
+            result.append(
+                f'<div class="callout" style="--callout-color: {color};">'
+                f'<div class="callout-title">{icon_html} {c_title or c_type.capitalize()}</div>'
+                f'<div class="callout-body">{bhtml}</div></div>')
         in_c = False
         body = []
 
+    c_fold = ""
     for line in lines:
-        m = re.match(r'^>\s*\[!(\w+)\]\s*(.*)', line)
+        m = re.match(r'^>\s*\[!(\w+)\]([+-])?\s*(.*)', line)
         if m:
             flush()
             in_c = True
-            c_type, c_title = m.group(1), m.group(2).strip()
+            c_type = m.group(1)
+            c_fold = m.group(2) or ""
+            c_title = m.group(3).strip()
             continue
         if in_c and line.startswith(">"):
             body.append(line[1:].lstrip(" "))

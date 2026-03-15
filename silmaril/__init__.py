@@ -384,6 +384,8 @@ def _restore_math(html: str) -> str:
     return html
 
 def render_md(content: str) -> str:
+    # Strip Obsidian comments %%...%%
+    content = re.sub(r'%%.*?%%', '', content, flags=re.DOTALL)
     content = _protect_math(content)  # protect LaTeX from markdown
     content = render_embeds(content)
     content = render_callouts(content)
@@ -391,11 +393,13 @@ def render_md(content: str) -> str:
     content = render_autolinks(content)
     content = re.sub(r'==(.*?)==', r'<mark>\1</mark>', content)
     content = re.sub(r'(?<!\w)#([a-zA-Z0-9_/\u0400-\u04FF\-]+)', r'⟨TAG:\1⟩', content)
-    # Convert checkboxes before markdown so they survive any wrapping
+    # Convert checkboxes before markdown (standard + alternative markers)
     content = re.sub(r'^(\s*[-*]\s*)\[ \]', r'\1⟨CB:unchecked⟩', content, flags=re.MULTILINE)
     content = re.sub(r'^(\s*[-*]\s*)\[[xX]\]', r'\1⟨CB:checked⟩', content, flags=re.MULTILINE)
+    content = re.sub(r'^(\s*[-*]\s*)\[[-/]\]', r'\1⟨CB:cancelled⟩', content, flags=re.MULTILINE)
+    content = re.sub(r'^(\s*[-*]\s*)\[[?!>]\]', r'\1⟨CB:other⟩', content, flags=re.MULTILINE)
     html = markdown.markdown(content, extensions=[
-        'tables', 'fenced_code', 'codehilite', 'toc', 'nl2br', 'sane_lists', 'smarty'
+        'tables', 'fenced_code', 'codehilite', 'toc', 'nl2br', 'sane_lists', 'smarty', 'footnotes'
     ])
     html = re.sub(r'⟨TAG:(.+?)⟩', r'<span class="tag">#\1</span>', html)
     html = _restore_math(html)
@@ -403,6 +407,8 @@ def render_md(content: str) -> str:
     # Restore checkboxes and add task-item class to parent <li>
     html = html.replace("⟨CB:unchecked⟩", '<input type="checkbox">')
     html = html.replace("⟨CB:checked⟩", '<input type="checkbox" checked>')
+    html = html.replace("⟨CB:cancelled⟩", '<input type="checkbox" checked class="cb-cancelled">')
+    html = html.replace("⟨CB:other⟩", '<input type="checkbox" class="cb-other">')
     html = re.sub(r'<li>(\s*(?:<p>)?\s*<input type="checkbox")', r'<li class="task-item">\1', html)
     return html
 

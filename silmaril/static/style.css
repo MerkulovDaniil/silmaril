@@ -119,6 +119,7 @@ body {
     max-width: var(--content-w);
     padding: 0 32px 40px;
     overflow-wrap: break-word; word-wrap: break-word; min-width: 0;
+    overflow-x: hidden;
 }
 .breadcrumb {
     font-size: 12px; color: var(--text2); margin-bottom: 4px;
@@ -231,6 +232,19 @@ details.callout > summary::-webkit-details-marker { display: none; }
 details.callout[open] .callout-fold { transform: rotate(90deg); }
 .callout-body { font-size: 14px; }
 .callout-body p { margin: 3px 0; }
+
+/* === Footnotes === */
+.footnote { vertical-align: super; font-size: 0.8em; text-decoration: none; }
+.footnote-ref a { color: var(--accent); text-decoration: none; }
+.footnote-backref { text-decoration: none; margin-left: 4px; }
+div.footnote { font-size: 13px; border-top: 1px solid var(--border); margin-top: 2em; padding-top: 1em; }
+div.footnote ol { padding-left: 1.5em; }
+div.footnote li { margin: 4px 0; }
+
+/* === Cancelled/other checkboxes === */
+.cb-cancelled { opacity: 0.5; }
+.cb-cancelled + *, li.task-item:has(.cb-cancelled) { text-decoration: line-through; opacity: 0.6; }
+.cb-other { accent-color: var(--yellow); }
 
 /* === Toolbar === */
 .toolbar { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }

@@ -366,6 +366,14 @@ def parse_meta(fp: Path) -> dict:
 def get_page_parts(meta: dict, file_path: str = "") -> dict:
     """Extract structured page parts: cover, icon, badges, props."""
     result = {"cover": "", "icon": "", "badges": "", "props": ""}
+
+    # Icon from Iconic plugin (independent of frontmatter)
+    if file_path and get_raw_icon(file_path):
+        icon_html = get_icon_html(file_path, "")
+        result["icon"] = f'<div class="page-icon" data-icon-path="{file_path}">{icon_html}</div>'
+    elif file_path and not CONFIG.get("readonly"):
+        result["icon"] = f'<div class="page-icon page-icon-add" data-icon-path="{file_path}"><span class="icon-add-btn">+</span></div>'
+
     if not meta:
         return result
 
@@ -376,13 +384,6 @@ def get_page_parts(meta: dict, file_path: str = "") -> dict:
             if url:
                 result["cover"] = f'<div class="cover"><img src="{url}" alt="" loading="lazy"></div>'
                 break
-
-    # Icon from Iconic plugin (only if file actually has an icon assigned)
-    if file_path and get_raw_icon(file_path):
-        icon_html = get_icon_html(file_path, "")
-        result["icon"] = f'<div class="page-icon" data-icon-path="{file_path}">{icon_html}</div>'
-    elif file_path and not CONFIG.get("readonly"):
-        result["icon"] = f'<div class="page-icon page-icon-add" data-icon-path="{file_path}"><span class="icon-add-btn">+</span></div>'
 
     # Badges
     badges = []

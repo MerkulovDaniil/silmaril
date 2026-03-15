@@ -1248,6 +1248,12 @@ async def base_view(dir_path: str, view: str = Query("cards")):
     if not dp.is_dir():
         raise HTTPException(404, "Not a directory")
 
+    # If directory contains a .base file, delegate to render_base_view
+    base_files = list(dp.glob("*.base"))
+    if base_files:
+        tab = 0  # default to first tab
+        return render_base_view(base_files[0], str(base_files[0].relative_to(VAULT_ROOT)), tab)
+
     # Collect all md files with their metadata
     entries = []
     for fp in sorted(dp.glob("*.md"), key=lambda f: f.stat().st_mtime, reverse=True):

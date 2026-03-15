@@ -1,11 +1,12 @@
-name: Keep alive + reset playground
+name: Rebuild playground
 
 on:
   schedule:
     - cron: '*/14 * * * *'
+  workflow_dispatch:
 
 jobs:
-  ping:
+  redeploy:
     runs-on: ubuntu-latest
     steps:
-      - run: curl -sf -X POST ${{ secrets.RENDER_URL }}/api/reset > /dev/null
+      - run: curl -sf -X POST ${{ secrets.RENDER_DEPLOY_HOOK }}

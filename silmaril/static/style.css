@@ -161,17 +161,28 @@ body {
     padding: 1px 6px; border-radius: 3px; font-size: 12px; white-space: nowrap;
 }
 
-/* === Properties === */
-.props {
-    background: var(--bg2); border-radius: 6px; padding: 6px 12px;
-    margin-bottom: 18px; font-size: 13px;
+/* === Pretty Properties (Notion-style) === */
+.pp-pill {
+    display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 500;
+    background: rgba(var(--pp-rgb, 158,158,158), 0.15);
+    color: rgb(var(--pp-rgb, 100,100,100));
 }
-.props table { width: 100%; border-collapse: collapse; }
-.props tr { border-bottom: 1px solid var(--border); }
-.props tr:last-child { border-bottom: none; }
-.props td { padding: 5px 6px; vertical-align: top; }
-.pk { color: var(--text2); font-weight: 500; white-space: nowrap; width: 1%; padding-right: 12px; }
-.pv { color: var(--text); word-break: break-word; }
+/* === Properties === */
+.props { margin-bottom: 18px; font-size: 13px; }
+.prop-row {
+    display: flex; gap: 8px; padding: 4px 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+}
+.prop-row:last-child { border-bottom: none; }
+.prop-icon { width: 14px; height: 14px; flex-shrink: 0; stroke: var(--text2); opacity: 0.6; margin-top: 3px; }
+.prop-key {
+    color: var(--text2); font-weight: 500; min-width: 80px; flex-shrink: 0;
+    font-size: 13px; padding-top: 2px;
+}
+.prop-val {
+    color: var(--text); word-break: break-word; display: flex; flex-wrap: wrap; gap: 4px;
+    align-items: center;
+}
 
 /* === Markdown content === */
 .md { overflow-wrap: break-word; word-break: break-word; font-family: var(--serif); font-size: 16px; line-height: 1.5; overflow-x: hidden; }

@@ -85,6 +85,43 @@ def _load_theme(name: str) -> str:
     print(f"Warning: could not fetch theme from {repo}")
     return ""
 
+
+# --- Pretty Properties plugin support ---
+
+_pretty_props_cache = None
+
+def _load_pretty_props() -> dict:
+    """Load Pretty Properties plugin config from vault."""
+    global _pretty_props_cache
+    if _pretty_props_cache is not None:
+        return _pretty_props_cache
+    pp_path = VAULT_ROOT / ".obsidian" / "plugins" / "pretty-properties" / "data.json"
+    if not pp_path.exists():
+        _pretty_props_cache = {}
+        return _pretty_props_cache
+    try:
+        _pretty_props_cache = json.loads(pp_path.read_text(encoding="utf-8"))
+    except Exception:
+        _pretty_props_cache = {}
+    return _pretty_props_cache
+
+
+# Obsidian color names → CSS RGB values
+_OBS_COLORS = {
+    "red": "233, 49, 71", "orange": "236, 117, 0", "yellow": "224, 172, 0",
+    "green": "8, 185, 78", "cyan": "0, 191, 188", "blue": "8, 109, 221",
+    "purple": "120, 82, 238", "pink": "213, 57, 132",
+}
+
+
+def _pill_html(text: str, color_name: str = "") -> str:
+    """Render a colored pill span using Obsidian color names."""
+    rgb = _OBS_COLORS.get(color_name, "")
+    if rgb:
+        return f'<span class="pp-pill" style="--pp-rgb:{rgb}">{_escape(str(text))}</span>'
+    return f'<span class="pp-pill">{_escape(str(text))}</span>'
+
+
 app = FastAPI(docs_url=None, redoc_url=None)
 
 
@@ -481,33 +518,81 @@ def get_page_parts(meta: dict, file_path: str = "") -> dict:
                 result["cover"] = f'<div class="cover"><img src="{url}" alt="" loading="lazy"></div>'
                 break
 
-    # Badges
+    pp = _load_pretty_props()
+    pp_pill_colors = pp.get("propertyPillColors", {})
+    pp_tag_colors = pp.get("tagColors", {})
+    pp_hidden = set(pp.get("hiddenProperties", []))
+
+    # Badges — status with pretty-properties colors
     badges = []
     for f in ("status",):
         vals = meta.get(f, [])
         if isinstance(vals, str):
             vals = [vals]
         for v in (vals if isinstance(vals, list) else []):
-            c = status_color(str(v))
-            badges.append(f'<span class="badge badge-{c}">{v}</span>')
+            pp_color = pp_pill_colors.get(str(v), {}).get("pillColor", "")
+            if pp_color:
+                badges.append(_pill_html(v, pp_color))
+            else:
+                c = status_color(str(v))
+                badges.append(f'<span class="badge badge-{c}">{v}</span>')
+    # Tags with pretty-properties colors
     for f in ("tags", "tag", "labels", "category"):
         vals = meta.get(f, [])
         if isinstance(vals, str):
             vals = [vals]
         for v in (vals if isinstance(vals, list) else []):
-            badges.append(f'<span class="tag">{v}</span>')
+            pp_color = pp_tag_colors.get(str(v), {}).get("pillColor", "")
+            if pp_color:
+                badges.append(_pill_html(v, pp_color))
+            else:
+                badges.append(f'<span class="tag">{v}</span>')
     if badges:
         result["badges"] = f'<div class="badges">{"".join(badges)}</div>'
 
-    # Properties
-    shown = COVER_FIELDS | BADGE_FIELDS | SKIP_FIELDS
-    props = {k: v for k, v in meta.items() if k.lower() not in shown and v is not None and str(v).strip()}
+    # Properties — Notion-style, skip hidden
+    shown = COVER_FIELDS | BADGE_FIELDS | SKIP_FIELDS | pp_hidden
+    props = {k: v for k, v in meta.items() if k.lower() not in shown and k not in pp_hidden and v is not None and str(v).strip()}
     if props:
+        # Load Obsidian property types
+        types_path = VAULT_ROOT / ".obsidian" / "types.json"
+        ob_types = {}
+        if types_path.exists():
+            try:
+                ob_types = json.loads(types_path.read_text(encoding="utf-8")).get("types", {})
+            except Exception:
+                pass
+        _TYPE_ICONS = {
+            "text": "text", "multitext": "list", "number": "hash",
+            "date": "calendar", "datetime": "clock", "checkbox": "check-square",
+            "tags": "tag", "aliases": "forward",
+        }
         rows = []
         for k, v in props.items():
-            val = str(v)[:300]
-            rows.append(f'<tr><td class="pk">{_escape(k)}</td><td class="pv">{_escape(val)}</td></tr>')
-        result["props"] = f'<div class="props"><table>{"".join(rows)}</table></div>'
+            ob_type = ob_types.get(k, "")
+            type_icon = _TYPE_ICONS.get(ob_type, "")
+            if not type_icon:
+                # Auto-detect from value
+                if isinstance(v, bool):
+                    type_icon = "check-square"
+                elif isinstance(v, list):
+                    type_icon = "list"
+                elif isinstance(v, (int, float)):
+                    type_icon = "hash"
+                elif isinstance(v, str) and re.match(r'^\d{4}-\d{2}-\d{2}', str(v)):
+                    type_icon = "calendar"
+                else:
+                    type_icon = "text"
+            # Render value
+            if isinstance(v, bool):
+                val_html = '<input type="checkbox" disabled checked>' if v else '<input type="checkbox" disabled>'
+            elif isinstance(v, list):
+                val_html = " ".join(f'<span class="pp-pill">{_escape(str(i))}</span>' for i in v)
+            else:
+                val_html = _escape(str(v)[:300])
+            icon = f'<i data-lucide="{type_icon}" class="prop-icon"></i>'
+            rows.append(f'<div class="prop-row">{icon}<span class="prop-key">{_escape(k)}</span><span class="prop-val">{val_html}</span></div>')
+        result["props"] = f'<div class="props">{"".join(rows)}</div>'
 
     return result
 

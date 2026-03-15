@@ -439,6 +439,10 @@ def _resolve_md_images(content: str, file_path: str) -> str:
         rel = file_dir / src
         if (VAULT_ROOT / rel).exists():
             return f'![{alt}](/static/{rel})'
+        # Obsidian-style: search by filename in entire vault
+        name = Path(src).name
+        for found in VAULT_ROOT.rglob(name):
+            return f'![{alt}](/static/{found.relative_to(VAULT_ROOT)})'
         return m.group(0)
 
     return re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', _fix_img, content)

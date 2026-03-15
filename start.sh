@@ -1,2 +1,2 @@
 #!/bin/sh
-exec silmaril --vault /docs --port ${PORT:-8080} --title "Silmaril" --host 0.0.0.0
+exec uvicorn playground:app --host 0.0.0.0 --port ${PORT:-8080}

@@ -4,11 +4,11 @@ A self-hosted, mobile-first web UI for browsing and editing Obsidian vaults from
 
 ```mermaid
 graph LR
-    V["📂 Obsidian Vault<br/><sub>VPS · NAS · Desktop</sub>"]
-    S["⚡ vault-viewer<br/><sub>single file · zero config</sub>"]
+    V[("📂 Your Vault")]
+    S{{"⚡ vault-viewer"}}
     V --- S
     S -->|browse| P["📱 Phone"]
-    S -->|search| T["🖥️ Desktop"]
+    S -->|search| T["🖥 Desktop"]
     S -->|edit| L["💻 Laptop"]
 ```
 

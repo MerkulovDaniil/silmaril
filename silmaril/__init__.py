@@ -229,13 +229,13 @@ def render_autolinks(text: str) -> str:
 
 def render_callouts(text: str) -> str:
     icons = {
-        "note": "&#9998;&#65039;", "tip": "&#128161;", "hint": "&#128161;",
-        "important": "&#128161;", "info": "&#8505;&#65039;",
-        "warning": "&#9888;&#65039;", "caution": "&#9888;&#65039;",
-        "danger": "&#9889;", "error": "&#9889;", "bug": "&#128027;",
-        "example": "&#128203;", "quote": "&#10077;", "cite": "&#10077;",
-        "success": "&#9989;", "check": "&#9989;", "done": "&#9989;",
-        "question": "&#10067;", "todo": "&#9744;",
+        "note": "✎️", "tip": "💡", "hint": "💡",
+        "important": "💡", "info": "ℹ️",
+        "warning": "⚠️", "caution": "⚠️",
+        "danger": "⚡", "error": "⚡", "bug": "🐛",
+        "example": "📋", "quote": "❝", "cite": "❝",
+        "success": "✅", "check": "✅", "done": "✅",
+        "question": "❓", "todo": "☐",
     }
     lines = text.split("\n")
     result, body, c_type, c_title = [], [], "", ""
@@ -245,7 +245,7 @@ def render_callouts(text: str) -> str:
         nonlocal in_c, body
         if not in_c:
             return
-        icon = icons.get(c_type.lower(), "&#128221;")
+        icon = icons.get(c_type.lower(), "📝")
         bhtml = markdown.markdown("\n".join(body), extensions=['tables', 'fenced_code', 'sane_lists'])
         result.append(
             f'<div class="callout callout-{c_type.lower()}">'

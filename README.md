@@ -2,8 +2,31 @@
 
 A self-hosted, mobile-first web UI for browsing and editing Obsidian vaults from any device. Single Python file, zero config. Inspired by [notion4ever](https://github.com/MerkulovDaniil/notion4ever).
 
-![Screenshot](screenshot.png)
-<!-- Replace screenshot.png with an actual screenshot of your vault -->
+```mermaid
+graph LR
+    subgraph YOUR MACHINE
+        V["🗄️ Obsidian Vault"]
+    end
+
+    subgraph SINGLE PROCESS
+        S["⚡ vault-viewer
+        one file · ~70 MB · zero config"]
+    end
+
+    V --- S
+
+    S --->|"🌐 clean URLs"| P["📱 Phone"]
+    S --->|"🌐 clean URLs"| T["🖥️ Desktop"]
+    S --->|"🌐 clean URLs"| L["💻 Laptop"]
+
+    style V fill:#1a1a2e,stroke:#e2e8f0,color:#f8f8f2
+    style S fill:#0d0d1a,stroke:#a78bfa,color:#f8f8f2,stroke-width:2px
+    style P fill:#1a1a2e,stroke:#e2e8f0,color:#f8f8f2
+    style T fill:#1a1a2e,stroke:#e2e8f0,color:#f8f8f2
+    style L fill:#1a1a2e,stroke:#e2e8f0,color:#f8f8f2
+```
+
+> **Your vault stays in one place. You access it from anywhere.**
 
 ## Why?
 

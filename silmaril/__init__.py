@@ -642,6 +642,33 @@ def _eval_filter(condition: str, meta: dict, fp: Path) -> bool:
     """Evaluate a single Obsidian Base filter condition against a file."""
     condition = condition.strip()
 
+    # leading "!" negation (e.g. !status.containsAny("finished", "frozen"))
+    # — distinct from the "!=" comparison operator handled below
+    if condition.startswith("!") and not condition.startswith("!="):
+        return not _eval_filter(condition[1:].strip(), meta, fp)
+
+    # property.containsAny("a", "b", ...) / property.containsAll(...)
+    m = re.match(r'(\w+)\.(containsAny|containsAll)\((.*)\)\s*$', condition)
+    if m:
+        key, fn, args_str = m.group(1), m.group(2), m.group(3)
+        targets = re.findall(r'"(.*?)"', args_str)
+        actual = meta.get(key, [])
+        if isinstance(actual, str):
+            actual = [actual]
+        actual = actual if isinstance(actual, list) else []
+        if fn == "containsAny":
+            return any(t in actual for t in targets)
+        return all(t in actual for t in targets)
+
+    # property.contains("xxx")
+    m = re.match(r'(\w+)\.contains\("(.+?)"\)\s*$', condition)
+    if m:
+        key, target = m.group(1), m.group(2)
+        actual = meta.get(key, [])
+        if isinstance(actual, str):
+            actual = [actual]
+        return target in (actual if isinstance(actual, list) else [])
+
     # file.folder != "xxx"
     m = re.match(r'file\.folder\s*!=\s*"(.+?)"', condition)
     if m:

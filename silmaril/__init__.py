@@ -627,7 +627,12 @@ def get_page_parts(meta: dict, file_path: str = "") -> dict:
 
 # --- Obsidian Bases (.base) engine ---
 
+import time
+
 import yaml
+
+# Snapshot for now()/today() — module load time is fine for a viewer process.
+_NOW_TS = time.time()
 
 
 def parse_base_file(fp: Path) -> dict:
@@ -638,138 +643,581 @@ def parse_base_file(fp: Path) -> dict:
         return {}
 
 
-def _eval_filter(condition: str, meta: dict, fp: Path) -> bool:
+# ---------------------------------------------------------------------------
+# Expression engine — powers both .base filters and formulas.
+# Implements the subset of the Obsidian Bases expression language that is
+# practical to evaluate server-side: literals, property access (file./note./
+# formula./bare), comparisons, arithmetic, boolean and/or/not, method calls
+# (contains/containsAny/.../startsWith/toFixed/...) and global functions
+# (if/min/max/sum/list/now/date/link/...). Parses once per unique string
+# (cached) into an AST, then evaluates per file.
+# ---------------------------------------------------------------------------
+
+_TOK_RE = re.compile(r"""
+    (?P<ws>\s+)
+  | (?P<num>\d+\.\d+|\d+)
+  | (?P<str>"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')
+  | (?P<op><=|>=|==|!=|&&|\|\||[<>+\-*/!(),.\[\]])
+  | (?P<id>[A-Za-z_][A-Za-z0-9_]*)
+""", re.VERBOSE)
+
+_KEYWORDS = {"and": "&&", "or": "||", "not": "!"}
+
+
+def _unquote(s: str) -> str:
+    q = s[0]
+    return s[1:-1].replace("\\" + q, q).replace("\\\\", "\\").replace("\\n", "\n").replace("\\t", "\t")
+
+
+def _tokenize(s: str):
+    toks, pos = [], 0
+    for m in _TOK_RE.finditer(s):
+        if m.start() != pos:
+            raise ValueError(f"bad token near {s[pos:pos+12]!r}")
+        pos = m.end()
+        kind = m.lastgroup
+        if kind == "ws":
+            continue
+        val = m.group()
+        if kind == "num":
+            val = float(val) if "." in val else int(val)
+        elif kind == "str":
+            val = _unquote(val)
+        elif kind == "id" and val in _KEYWORDS:
+            kind, val = "op", _KEYWORDS[val]
+        toks.append((kind, val))
+    if pos != len(s):
+        raise ValueError(f"trailing input near {s[pos:pos+12]!r}")
+    toks.append(("eof", None))
+    return toks
+
+
+class _Parser:
+    """Recursive-descent parser → nested-tuple AST."""
+
+    def __init__(self, toks):
+        self.toks, self.i = toks, 0
+
+    def _peek(self):
+        return self.toks[self.i]
+
+    def _next(self):
+        t = self.toks[self.i]
+        self.i += 1
+        return t
+
+    def _eat(self, val):
+        k, v = self._next()
+        if v != val:
+            raise ValueError(f"expected {val!r}, got {v!r}")
+
+    def parse(self):
+        node = self._or()
+        if self._peek()[0] != "eof":
+            raise ValueError("unexpected trailing tokens")
+        return node
+
+    def _or(self):
+        node = self._and()
+        while self._peek() == ("op", "||"):
+            self._next()
+            node = ("bin", "||", node, self._and())
+        return node
+
+    def _and(self):
+        node = self._not()
+        while self._peek() == ("op", "&&"):
+            self._next()
+            node = ("bin", "&&", node, self._not())
+        return node
+
+    def _not(self):
+        if self._peek() == ("op", "!"):
+            self._next()
+            return ("un", "!", self._not())
+        return self._cmp()
+
+    def _cmp(self):
+        node = self._add()
+        if self._peek()[0] == "op" and self._peek()[1] in ("==", "!=", "<", ">", "<=", ">="):
+            op = self._next()[1]
+            node = ("bin", op, node, self._add())
+        return node
+
+    def _add(self):
+        node = self._mul()
+        while self._peek()[0] == "op" and self._peek()[1] in ("+", "-"):
+            op = self._next()[1]
+            node = ("bin", op, node, self._mul())
+        return node
+
+    def _mul(self):
+        node = self._unary()
+        while self._peek()[0] == "op" and self._peek()[1] in ("*", "/"):
+            op = self._next()[1]
+            node = ("bin", op, node, self._unary())
+        return node
+
+    def _unary(self):
+        if self._peek() == ("op", "-"):
+            self._next()
+            return ("un", "-", self._unary())
+        return self._postfix()
+
+    def _postfix(self):
+        node = self._primary()
+        while True:
+            t = self._peek()
+            if t == ("op", "."):
+                self._next()
+                k, name = self._next()
+                if k != "id":
+                    raise ValueError("expected name after '.'")
+                if self._peek() == ("op", "("):
+                    args = self._args()
+                    node = ("call", ("attr", node, name), args)
+                else:
+                    node = ("attr", node, name)
+            elif t == ("op", "["):
+                self._next()
+                idx = self._or()
+                self._eat("]")
+                node = ("index", node, idx)
+            else:
+                break
+        return node
+
+    def _args(self):
+        self._eat("(")
+        args = []
+        if self._peek() != ("op", ")"):
+            args.append(self._or())
+            while self._peek() == ("op", ","):
+                self._next()
+                args.append(self._or())
+        self._eat(")")
+        return args
+
+    def _primary(self):
+        k, v = self._next()
+        if k == "num" or k == "str":
+            return ("lit", v)
+        if k == "op" and v == "(":
+            node = self._or()
+            self._eat(")")
+            return node
+        if k == "op" and v == "[":
+            items = []
+            if self._peek() != ("op", "]"):
+                items.append(self._or())
+                while self._peek() == ("op", ","):
+                    self._next()
+                    items.append(self._or())
+            self._eat("]")
+            return ("listlit", items)
+        if k == "id":
+            if v == "true":
+                return ("lit", True)
+            if v == "false":
+                return ("lit", False)
+            if v == "null":
+                return ("lit", None)
+            if self._peek() == ("op", "("):
+                return ("call", ("var", v), self._args())
+            return ("var", v)
+        raise ValueError(f"unexpected token {v!r}")
+
+
+_AST_CACHE: dict = {}
+
+
+def _parse_expr(s: str):
+    if s not in _AST_CACHE:
+        _AST_CACHE[s] = _Parser(_tokenize(s)).parse()
+    return _AST_CACHE[s]
+
+
+class _FileProxy:
+    """Resolves `file.*` properties and methods for a vault file."""
+
+    def __init__(self, fp: Path, meta: dict):
+        self.fp, self.meta = fp, meta
+
+    def _folder(self):
+        rel = str(self.fp.parent.relative_to(VAULT_ROOT))
+        return "" if rel == "." else rel
+
+    def _tags(self):
+        t = self.meta.get("tags", [])
+        return [t] if isinstance(t, str) else (t if isinstance(t, list) else [])
+
+    def _has_link(self, target):
+        target = target.strip("[]").split("|")[0].split("#")[0].strip()
+        try:
+            text = self.fp.read_text(encoding="utf-8")
+        except OSError:
+            return False
+        return f"[[{target}" in text
+
+    def get(self, name):
+        if name == "name":
+            return self.fp.stem
+        if name in ("basename", "title"):
+            return self.fp.stem
+        if name == "folder":
+            return self._folder()
+        if name in ("ext", "extension"):
+            return self.fp.suffix.lstrip(".")
+        if name == "path":
+            return str(self.fp.relative_to(VAULT_ROOT))
+        if name == "tags":
+            return self._tags()
+        if name in ("mtime", "ctime"):
+            try:
+                return self.fp.stat().st_mtime
+            except OSError:
+                return 0
+        if name == "size":
+            try:
+                return self.fp.stat().st_size
+            except OSError:
+                return 0
+        return self.meta.get(name)
+
+
+class _NoteProxy:
+    def __init__(self, meta):
+        self.meta = meta
+
+    def get(self, name):
+        return self.meta.get(name)
+
+
+class _FormulaProxy:
+    def __init__(self, ctx):
+        self.ctx = ctx
+
+    def get(self, name):
+        return self.ctx["eval_formula"](name)
+
+
+def _truthy(v) -> bool:
+    if isinstance(v, (list, dict, str)):
+        return len(v) > 0
+    return bool(v)
+
+
+def _as_list(v):
+    if v is None:
+        return []
+    return v if isinstance(v, list) else [v]
+
+
+def _flatten_args(argv):
+    if len(argv) == 1 and isinstance(argv[0], list):
+        return argv[0]
+    return argv
+
+
+def _num(v):
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return v
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _method(recv, name, argv):
+    if isinstance(recv, _FileProxy):
+        if name == "hasTag":
+            tags = recv._tags()
+            return any(t in tags for t in _flatten_args(argv))
+        if name == "inFolder":
+            folder = recv._folder()
+            target = str(argv[0]).strip("/") if argv else ""
+            return folder == target or folder.startswith(target + "/")
+        if name == "hasProperty":
+            return bool(argv) and argv[0] in recv.meta
+        if name == "hasLink":
+            return recv._has_link(str(argv[0])) if argv else False
+        # other file methods fall through to generic handling on resolved attrs
+    if name in ("contains", "containsAny", "containsAll"):
+        targets = _flatten_args(argv) if name != "contains" else argv
+        if isinstance(recv, str) and name == "contains":
+            return str(argv[0]) in recv
+        coll = _as_list(recv)
+        if name == "containsAll":
+            return all(t in coll for t in targets)
+        if name == "containsAny":
+            return any(t in coll for t in targets)
+        return argv[0] in coll
+    if name == "startsWith":
+        return str(recv or "").startswith(str(argv[0]))
+    if name == "endsWith":
+        return str(recv or "").endswith(str(argv[0]))
+    if name in ("toLowerCase", "lower"):
+        return str(recv or "").lower()
+    if name in ("toUpperCase", "upper"):
+        return str(recv or "").upper()
+    if name == "trim":
+        return str(recv or "").strip()
+    if name == "toFixed":
+        n = _num(recv)
+        digits = int(argv[0]) if argv else 0
+        return f"{n:.{digits}f}" if n is not None else ""
+    if name == "round":
+        n = _num(recv)
+        digits = int(argv[0]) if argv else 0
+        return round(n, digits) if n is not None else None
+    if name == "abs":
+        n = _num(recv)
+        return abs(n) if n is not None else None
+    if name in ("isEmpty",):
+        return not _truthy(recv)
+    if name in ("length", "len"):
+        try:
+            return len(recv)
+        except TypeError:
+            return 0
+    if name == "split":
+        return str(recv or "").split(str(argv[0]) if argv else None)
+    if name == "join":
+        return (str(argv[0]) if argv else "").join(str(x) for x in _as_list(recv))
+    if name == "reverse":
+        return list(reversed(_as_list(recv)))
+    if name == "sort":
+        return sorted(_as_list(recv), key=str)
+    if name == "unique":
+        seen, out = set(), []
+        for x in _as_list(recv):
+            if x not in seen:
+                seen.add(x)
+                out.append(x)
+        return out
+    if name == "toString":
+        return str(recv) if recv is not None else ""
+    return None
+
+
+def _global_func(name, argv, ctx):
+    if name == "if":
+        if _truthy(argv[0]):
+            return argv[1] if len(argv) > 1 else None
+        return argv[2] if len(argv) > 2 else None
+    if name == "not":
+        return not _truthy(argv[0])
+    if name == "min":
+        nums = [n for n in (_num(x) for x in _flatten_args(argv)) if n is not None]
+        return min(nums) if nums else None
+    if name == "max":
+        nums = [n for n in (_num(x) for x in _flatten_args(argv)) if n is not None]
+        return max(nums) if nums else None
+    if name == "sum":
+        nums = [n for n in (_num(x) for x in _flatten_args(argv)) if n is not None]
+        return sum(nums)
+    if name == "list":
+        return _flatten_args(argv)
+    if name == "number":
+        return _num(argv[0]) if argv else None
+    if name in ("link", "file", "image", "icon", "html", "escapeHTML", "string"):
+        return argv[0] if argv else None
+    if name == "now" or name == "today":
+        return _NOW_TS
+    if name == "date":
+        return str(argv[0]) if argv else None
+    return None
+
+
+def _eval_node(node, ctx):
+    kind = node[0]
+    if kind == "lit":
+        return node[1]
+    if kind == "listlit":
+        return [_eval_node(n, ctx) for n in node[1]]
+    if kind == "var":
+        name = node[1]
+        if name == "file":
+            return _FileProxy(ctx["fp"], ctx["meta"])
+        if name == "note":
+            return _NoteProxy(ctx["meta"])
+        if name == "formula":
+            return _FormulaProxy(ctx)
+        if name == "this":
+            return _NoteProxy(ctx["meta"])
+        return ctx["meta"].get(name)
+    if kind == "attr":
+        recv = _eval_node(node[1], ctx)
+        if isinstance(recv, (_FileProxy, _NoteProxy, _FormulaProxy)):
+            return recv.get(node[2])
+        if isinstance(recv, str) and node[2] == "length":
+            return len(recv)
+        if isinstance(recv, list) and node[2] == "length":
+            return len(recv)
+        return None
+    if kind == "index":
+        recv = _eval_node(node[1], ctx)
+        idx = _eval_node(node[2], ctx)
+        try:
+            return recv[int(idx)]
+        except (TypeError, ValueError, IndexError, KeyError):
+            return None
+    if kind == "call":
+        callee, args = node[1], node[2]
+        argv = [_eval_node(a, ctx) for a in args]
+        if callee[0] == "attr":
+            recv = _eval_node(callee[1], ctx)
+            return _method(recv, callee[2], argv)
+        if callee[0] == "var":
+            return _global_func(callee[1], argv, ctx)
+        return None
+    if kind == "un":
+        op = node[1]
+        v = _eval_node(node[2], ctx)
+        if op == "!":
+            return not _truthy(v)
+        if op == "-":
+            n = _num(v)
+            return -n if n is not None else None
+    if kind == "bin":
+        op = node[1]
+        if op == "&&":
+            return _truthy(_eval_node(node[2], ctx)) and _truthy(_eval_node(node[3], ctx))
+        if op == "||":
+            return _truthy(_eval_node(node[2], ctx)) or _truthy(_eval_node(node[3], ctx))
+        a = _eval_node(node[2], ctx)
+        b = _eval_node(node[3], ctx)
+        return _binop(op, a, b)
+    return None
+
+
+def _binop(op, a, b):
+    if op in ("==", "!="):
+        eq = _loose_eq(a, b)
+        return eq if op == "==" else not eq
+    if op in ("<", ">", "<=", ">="):
+        na, nb = _num(a), _num(b)
+        if na is not None and nb is not None:
+            a, b = na, nb
+        else:
+            a, b = str(a if a is not None else ""), str(b if b is not None else "")
+        if op == "<":
+            return a < b
+        if op == ">":
+            return a > b
+        if op == "<=":
+            return a <= b
+        return a >= b
+    if op == "+":
+        na, nb = _num(a), _num(b)
+        if na is not None and nb is not None and not isinstance(a, str) and not isinstance(b, str):
+            return na + nb
+        return str(a if a is not None else "") + str(b if b is not None else "")
+    na, nb = _num(a), _num(b)
+    if na is None or nb is None:
+        return None
+    if op == "-":
+        return na - nb
+    if op == "*":
+        return na * nb
+    if op == "/":
+        return na / nb if nb else None
+    return None
+
+
+def _loose_eq(a, b):
+    if isinstance(a, list) and isinstance(b, list):
+        return any(x in b for x in a)
+    if isinstance(a, list):
+        return b in a
+    if isinstance(b, list):
+        return a in b
+    na, nb = _num(a), _num(b)
+    if na is not None and nb is not None and not isinstance(a, str) and not isinstance(b, str):
+        return na == nb
+    return str(a if a is not None else "") == str(b if b is not None else "")
+
+
+def _make_ctx(meta: dict, fp: Path, formulas: dict = None):
+    formulas = formulas or {}
+    cache, stack = {}, set()
+
+    def eval_formula(name):
+        if name in cache:
+            return cache[name]
+        if name not in formulas or name in stack:
+            return None
+        stack.add(name)
+        try:
+            cache[name] = eval_expr(formulas[name])
+        finally:
+            stack.discard(name)
+        return cache.get(name)
+
+    ctx = {"meta": meta, "fp": fp, "eval_formula": eval_formula}
+
+    def eval_expr(s):
+        try:
+            return _eval_node(_parse_expr(str(s)), ctx)
+        except Exception:
+            return None
+
+    ctx["eval_expr"] = eval_expr
+    return ctx
+
+
+def eval_base_expr(expr: str, meta: dict, fp: Path, formulas: dict = None):
+    """Public: evaluate a single .base expression string for one file."""
+    return _make_ctx(meta, fp, formulas)["eval_expr"](expr)
+
+
+def _eval_filter(condition: str, meta: dict, fp: Path, formulas: dict = None) -> bool:
     """Evaluate a single Obsidian Base filter condition against a file."""
-    condition = condition.strip()
-
-    # leading "!" negation (e.g. !status.containsAny("finished", "frozen"))
-    # — distinct from the "!=" comparison operator handled below
-    if condition.startswith("!") and not condition.startswith("!="):
-        return not _eval_filter(condition[1:].strip(), meta, fp)
-
-    # property.containsAny("a", "b", ...) / property.containsAll(...)
-    m = re.match(r'(\w+)\.(containsAny|containsAll)\((.*)\)\s*$', condition)
-    if m:
-        key, fn, args_str = m.group(1), m.group(2), m.group(3)
-        targets = re.findall(r'"(.*?)"', args_str)
-        actual = meta.get(key, [])
-        if isinstance(actual, str):
-            actual = [actual]
-        actual = actual if isinstance(actual, list) else []
-        if fn == "containsAny":
-            return any(t in actual for t in targets)
-        return all(t in actual for t in targets)
-
-    # property.contains("xxx")
-    m = re.match(r'(\w+)\.contains\("(.+?)"\)\s*$', condition)
-    if m:
-        key, target = m.group(1), m.group(2)
-        actual = meta.get(key, [])
-        if isinstance(actual, str):
-            actual = [actual]
-        return target in (actual if isinstance(actual, list) else [])
-
-    # file.folder != "xxx"
-    m = re.match(r'file\.folder\s*!=\s*"(.+?)"', condition)
-    if m:
-        return str(fp.parent.relative_to(VAULT_ROOT)) != m.group(1)
-
-    # file.folder == "xxx" or file.inFolder("xxx")
-    m = re.match(r'file\.folder\s*==\s*"(.+?)"', condition) or re.match(r'file\.inFolder\("(.+?)"\)', condition)
-    if m:
-        return m.group(1) in str(fp.parent.relative_to(VAULT_ROOT))
-
-    # file.name.startsWith("xxx")
-    m = re.match(r'file\.name\.startsWith\("(.+?)"\)', condition)
-    if m:
-        return fp.stem.startswith(m.group(1))
-
-    # file.ext == "xxx"
-    m = re.match(r'file\.ext\s*==\s*"(.+?)"', condition)
-    if m:
-        return fp.suffix.lstrip(".") == m.group(1)
-
-    # file.tags.contains("xxx")
-    m = re.match(r'file\.tags\.contains\("(.+?)"\)', condition)
-    if m:
-        tags = meta.get("tags", [])
-        if isinstance(tags, str):
-            tags = [tags]
-        return m.group(1) in (tags if isinstance(tags, list) else [])
-
-    # property == value  (e.g. type == "project", status == ["finished"])
-    m = re.match(r'(\w+)\s*==\s*(.+)', condition)
-    if m:
-        key, val_str = m.group(1), m.group(2).strip()
-        actual = meta.get(key, "")
-        # Parse value
-        if val_str.startswith('"') and val_str.endswith('"'):
-            target = val_str.strip('"')
-        elif val_str.startswith('['):
-            try:
-                target = yaml.safe_load(val_str)
-            except Exception:
-                target = val_str
-        else:
-            target = val_str
-
-        if isinstance(actual, list) and isinstance(target, list):
-            return any(t in actual for t in target)
-        if isinstance(actual, list):
-            return target in actual
-        return str(actual) == str(target)
-
-    # property != value  (e.g. status != "done", status != ["archived"])
-    m = re.match(r'(\w+)\s*!=\s*(.+)', condition)
-    if m:
-        key, val_str = m.group(1), m.group(2).strip()
-        actual = meta.get(key, "")
-        if val_str.startswith('"') and val_str.endswith('"'):
-            target = val_str.strip('"')
-        elif val_str.startswith('['):
-            try:
-                target = yaml.safe_load(val_str)
-            except Exception:
-                target = val_str
-        else:
-            target = val_str
-
-        if isinstance(actual, list) and isinstance(target, list):
-            return not any(t in actual for t in target)
-        if isinstance(actual, list):
-            return target not in actual
-        return str(actual) != str(target)
-
-    return True  # unknown filter → pass
+    ctx = _make_ctx(meta, fp, formulas)
+    try:
+        return _truthy(_eval_node(_parse_expr(condition.strip()), ctx))
+    except Exception:
+        return True  # unparseable filter → don't hide the file
 
 
-def apply_filters(filters: dict, meta: dict, fp: Path) -> bool:
-    """Apply nested AND/OR filter structure."""
+def apply_filters(filters, meta: dict, fp: Path, formulas: dict = None) -> bool:
+    """Apply nested AND/OR/NOT filter structure.
+
+    `not` follows Obsidian semantics — "None of the following are true":
+    the group passes only if no child condition matches.
+    """
     if not filters:
         return True
+    if isinstance(filters, str):
+        return _eval_filter(filters, meta, fp, formulas)
     if "and" in filters:
-        return all(
-            apply_filters(f, meta, fp) if isinstance(f, dict) else _eval_filter(f, meta, fp)
-            for f in filters["and"]
-        )
+        return all(apply_filters(f, meta, fp, formulas) for f in filters["and"])
     if "or" in filters:
-        return any(
-            apply_filters(f, meta, fp) if isinstance(f, dict) else _eval_filter(f, meta, fp)
-            for f in filters["or"]
-        )
+        return any(apply_filters(f, meta, fp, formulas) for f in filters["or"])
+    if "not" in filters:
+        return not any(apply_filters(f, meta, fp, formulas) for f in filters["not"])
     return True
 
 
-def collect_base_entries(global_filters: dict, view_filters: dict = None) -> list[dict]:
-    """Collect all vault files matching base filters."""
+def collect_base_entries(global_filters: dict, view_filters: dict = None,
+                         formulas: dict = None) -> list[dict]:
+    """Collect all vault files matching base filters.
+
+    `formulas` (name → expression) are evaluated per file and exposed both to
+    the filters (so a view can filter on `formula.x`) and to rendering via the
+    `formula` dict on each entry.
+    """
+    formulas = formulas or {}
     entries = []
     for fp in VAULT_ROOT.rglob("*.md"):
         if fp.name.startswith("."):
             continue
         meta = parse_meta(fp)
-        if not apply_filters(global_filters, meta, fp):
+        if not apply_filters(global_filters, meta, fp, formulas):
             continue
-        if view_filters and not apply_filters(view_filters, meta, fp):
+        if view_filters and not apply_filters(view_filters, meta, fp, formulas):
             continue
 
         cover = ""
@@ -784,6 +1232,11 @@ def collect_base_entries(global_filters: dict, view_filters: dict = None) -> lis
         tags = meta.get("tags", [])
         if isinstance(tags, str):
             tags = [tags]
+        formula_vals = {}
+        if formulas:
+            ctx = _make_ctx(meta, fp, formulas)
+            for fname in formulas:
+                formula_vals[fname] = ctx["eval_formula"](fname)
         entries.append({
             "name": fp.stem,
             "path": str(fp.relative_to(VAULT_ROOT)),
@@ -791,11 +1244,46 @@ def collect_base_entries(global_filters: dict, view_filters: dict = None) -> lis
             "status": status if isinstance(status, list) else [],
             "tags": tags if isinstance(tags, list) else [],
             "meta": meta,
+            "formula": formula_vals,
             "mtime": fp.stat().st_mtime,
         })
 
     entries.sort(key=lambda e: e["name"].lower())
     return entries
+
+
+def _field_value(e: dict, field: str):
+    """Raw value for a field path: formula.X, file.X, note.X, or a bare prop.
+
+    Used by both rendering and sorting so they stay consistent.
+    """
+    if field.startswith("formula."):
+        return e.get("formula", {}).get(field[len("formula."):])
+    prop = field.replace("note.", "")
+    if prop.startswith("file."):
+        sub = prop[len("file."):]
+        if sub in ("name", "basename"):
+            return e["name"]
+        if sub == "path":
+            return e["path"]
+        if sub in ("mtime", "ctime"):
+            return e.get("mtime", 0)
+        if sub in ("ext", "extension"):
+            return e["path"].rsplit(".", 1)[-1] if "." in e["path"] else ""
+        return e["meta"].get(sub)
+    if prop == "tags":
+        return e.get("tags", [])
+    if prop == "status":
+        return e.get("status", [])
+    return e["meta"].get(prop)
+
+
+def _fmt_scalar(val) -> str:
+    if isinstance(val, float):
+        return f"{val:.2f}".rstrip("0").rstrip(".")
+    if isinstance(val, list):
+        return ", ".join(str(v) for v in val)
+    return str(val)
 
 
 def _render_card_field(e: dict, field: str) -> str:
@@ -807,11 +1295,11 @@ def _render_card_field(e: dict, field: str) -> str:
         return "".join(f'<span class="tag">{t}</span>' for t in e.get("tags", [])[:4])
     if prop == "status":
         return "".join(f'<span class="badge badge-{status_color(str(s))}">{s}</span>' for s in e.get("status", [])[:2])
-    # Generic frontmatter field
-    val = e["meta"].get(prop, "")
-    if not val:
+    # Formula or generic frontmatter field
+    val = _field_value(e, field)
+    if val is None or val == "" or val == []:
         return ""
-    return f'<span class="card-prop">{_escape(str(val)[:80])}</span>'
+    return f'<span class="card-prop">{_escape(_fmt_scalar(val)[:80])}</span>'
 
 
 def _extract_first_image(fp: Path) -> str:
@@ -887,12 +1375,17 @@ def render_base_cards(entries: list[dict], image_field: str = "", aspect: float 
 
 def render_base_table(entries: list[dict], columns: list[str] = None,
                       row_height: str = "", column_sizes: dict = None,
-                      show_summary: bool = False) -> str:
-    """Render entries as a table with specified columns."""
+                      show_summary: bool = False, display_names: dict = None) -> str:
+    """Render entries as a table with specified columns.
+
+    Columns keep their full field path (e.g. `formula.ppu`, `note.age`) so
+    values resolve through _field_value; headers use displayName when given.
+    """
     if not columns:
         columns = ["status", "tags"]
-    # Clean column names
-    cols = [c.replace("file.", "").replace("note.", "") for c in columns if c != "file.name"]
+    display_names = display_names or {}
+    # Keep full field paths; the name column is rendered separately.
+    cols = [c for c in columns if c not in ("file.name", "name")]
 
     # Row height → CSS padding
     rh_map = {"short": "3px 10px", "medium": "6px 10px", "tall": "12px 10px", "extra-tall": "20px 10px"}
@@ -901,24 +1394,31 @@ def render_base_table(entries: list[dict], columns: list[str] = None,
     # Column widths from columnSize config
     col_sizes = column_sizes or {}
 
+    def _header(c):
+        if c in display_names:
+            return display_names[c]
+        return c.replace("formula.", "").replace("file.", "").replace("note.", "")
+
     ths = '<th>Name</th>'
     for c in cols:
+        short = c.replace("file.", "").replace("note.", "")
         w_style = ""
-        if c in col_sizes:
-            w_style = f' style="width:{int(col_sizes[c])}px"'
-        ths += f'<th{w_style}>{_escape(c)}</th>'
+        if c in col_sizes or short in col_sizes:
+            w_style = f' style="width:{int(col_sizes.get(c, col_sizes.get(short)))}px"'
+        ths += f'<th{w_style}>{_escape(_header(c))}</th>'
 
     trs = ""
     for e in entries:
         tds = f'<td style="padding:{row_pad}"><a href="/{e["path"]}">{_escape(e["name"])}</a></td>'
         for c in cols:
-            if c == "status":
+            short = c.replace("file.", "").replace("note.", "")
+            if short == "status":
                 cell = "".join(f'<span class="badge badge-{status_color(str(s))}">{s}</span>' for s in e["status"])
-            elif c in ("tags", "tag"):
+            elif short in ("tags", "tag"):
                 cell = '<div class="cell-tags">' + "".join(f'<span class="tag">{t}</span>' for t in e["tags"]) + '</div>'
             else:
-                val = e["meta"].get(c, "")
-                cell = _escape(str(val))[:150]
+                val = _field_value(e, c)
+                cell = "" if val is None or val == "" or val == [] else _escape(_fmt_scalar(val))[:150]
             tds += f'<td style="padding:{row_pad}">{cell}</td>'
         trs += f'<tr>{tds}</tr>'
 
@@ -948,9 +1448,9 @@ def render_base_list(entries: list[dict], fields: list[str] = None) -> str:
             elif prop in ("tags", "tag") and e["tags"]:
                 meta_parts.append("".join(f'<span class="tag">{t}</span>' for t in e["tags"][:3]))
             else:
-                val = e["meta"].get(prop, "")
-                if val:
-                    meta_parts.append(f'<span class="card-prop">{_escape(str(val)[:80])}</span>')
+                val = _field_value(e, field)
+                if val is not None and val != "" and val != []:
+                    meta_parts.append(f'<span class="card-prop">{_escape(_fmt_scalar(val)[:80])}</span>')
 
         meta_html = f' <span class="db-row-tags">{" ".join(meta_parts)}</span>' if meta_parts else ""
         rows += f'<a class="db-row" href="/{e["path"]}"><div class="db-row-title">{_escape(e["name"])}</div>{meta_html}</a>'
@@ -1272,14 +1772,14 @@ async def index():
 
 def _group_entries(entries: list[dict], group_by: dict) -> list[tuple[str, list[dict]]]:
     """Group entries by a property. Returns list of (group_label, entries) tuples."""
-    prop = group_by.get("property", "").replace("file.", "").replace("note.", "")
+    field = group_by.get("property", "")
     desc = group_by.get("direction", "ASC").upper() == "DESC"
-    if not prop:
+    if not field:
         return [("", entries)]
 
     groups: dict[str, list[dict]] = {}
     for e in entries:
-        val = e["meta"].get(prop, "")
+        val = e["name"] if field in ("file.name", "name") else _field_value(e, field)
         if isinstance(val, list):
             keys = [str(v) for v in val] if val else ["(empty)"]
         else:
@@ -1295,6 +1795,10 @@ def render_base_view(fp: Path, file_path: str, active_tab: int = 0) -> HTMLRespo
     """Render an Obsidian .base file with tabs and filtered views."""
     base = parse_base_file(fp)
     global_filters = base.get("filters", {})
+    formulas = base.get("formulas", {}) or {}
+    properties_cfg = base.get("properties", {}) or {}
+    display_names = {k: v.get("displayName") for k, v in properties_cfg.items()
+                     if isinstance(v, dict) and v.get("displayName")}
     views = base.get("views", [])
 
     if not views:
@@ -1327,17 +1831,24 @@ def render_base_view(fp: Path, file_path: str, active_tab: int = 0) -> HTMLRespo
     group_by = view.get("groupBy", {})
     summaries = view.get("summaries", False)
 
-    entries = collect_base_entries(global_filters, view_filters)
+    entries = collect_base_entries(global_filters, view_filters, formulas)
 
-    # Sort
+    # Sort — supports file./note./formula. fields, numeric-aware.
     sort_rules = view.get("sort", [])
     for rule in reversed(sort_rules):
-        prop = rule.get("property", "").replace("file.", "").replace("note.", "")
+        field = rule.get("property", "")
+        if not field:
+            continue
         desc = rule.get("direction", "ASC").upper() == "DESC"
-        if prop == "name":
-            entries.sort(key=lambda e: e["name"].lower(), reverse=desc)
-        elif prop:
-            entries.sort(key=lambda e: str(e["meta"].get(prop, "")).lower(), reverse=desc)
+
+        def _key(e, field=field):
+            val = e["name"] if field in ("file.name", "name") else _field_value(e, field)
+            n = _num(val)
+            if n is not None:
+                return (0, n, "")
+            return (1, 0, _fmt_scalar(val).lower() if val not in (None, "", []) else "")
+
+        entries.sort(key=_key, reverse=desc)
 
     total_count = len(entries)
 
@@ -1365,7 +1876,8 @@ def render_base_view(fp: Path, file_path: str, active_tab: int = 0) -> HTMLRespo
         else:
             return render_base_table(view_entries, columns, row_height=row_height,
                                       column_sizes=column_sizes,
-                                      show_summary=bool(summaries))
+                                      show_summary=bool(summaries),
+                                      display_names=display_names)
 
     # GroupBy
     if group_by and group_by.get("property"):

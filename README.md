@@ -99,6 +99,20 @@ hide:
 
 **Priority**: CLI args > config file > environment variables > defaults.
 
+### Obsidian excluded files
+
+Silmaril reads **Settings → Files and links → Excluded files** from the vault's
+`.obsidian/app.json` (`userIgnoreFilters`). Matching files are excluded from both
+search endpoints, the homepage's recent notes, and its note counts. For example,
+`_archive/` excludes that folder's contents. Plain entries match literal path
+prefixes, case-insensitively; `/expression/` entries use case-insensitive regular
+expressions (Python-compatible syntax). Invalid expressions are skipped.
+
+Settings are read on every request, so updating them needs no server restart;
+reload an already open page to refresh its client-side search index. Excluded
+files remain browsable in the folder tree, folder/Base views, and direct links.
+The separate `hide` setting above still controls visibility in the folder tree.
+
 ## Themes
 
 Silmaril supports all [416 Obsidian community themes](https://github.com/obsidianmd/obsidian-releases/blob/master/community-css-themes.json) out of the box. Just set the theme name in your config:

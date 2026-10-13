@@ -236,6 +236,42 @@ def _is_hidden(rel: str) -> bool:
     return False
 
 
+def _obsidian_ignore_patterns() -> list[re.Pattern]:
+    """Read Obsidian's discovery exclusions once per request (no restart needed).
+
+    Like Obsidian, plain entries are case-insensitive literal path prefixes;
+    /expression/ entries are case-insensitive regular expressions, not globs.
+    These filters do not remove files from the tree or block direct access.
+    """
+    try:
+        settings = json.loads((VAULT_ROOT / ".obsidian" / "app.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(settings, dict):
+        return []
+    filters = settings.get("userIgnoreFilters")
+    if not isinstance(filters, list):
+        return []
+    patterns = []
+    for value in filters:
+        if not isinstance(value, str) or not value.strip():
+            continue
+        value = value.strip()
+        expression = value[1:-1] if len(value) > 2 and value.startswith("/") and value.endswith("/") else "^" + re.escape(value)
+        try:
+            patterns.append(re.compile(expression, re.IGNORECASE))
+        except re.error:
+            continue
+    return patterns
+
+
+def _is_discoverable(fp: Path, ignored: list[re.Pattern]) -> bool:
+    rel = fp.relative_to(VAULT_ROOT).as_posix()
+    return (not any(part.startswith(".") for part in fp.relative_to(VAULT_ROOT).parts)
+            and not _is_hidden(rel)
+            and not any(pattern.search(rel) for pattern in ignored))
+
+
 def get_file_tree(root: Path) -> list[dict]:
     items = []
     try:
@@ -1735,9 +1771,11 @@ def layout(title: str, content: str, current_path: str = "", toast: str = "", pa
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    total = sum(1 for _ in VAULT_ROOT.rglob("*.md"))
+    ignored = _obsidian_ignore_patterns()
+    notes = [f for f in VAULT_ROOT.rglob("*.md") if f.is_file() and _is_discoverable(f, ignored)]
+    total = len(notes)
     recent = sorted(
-        [f for f in VAULT_ROOT.rglob("*.md") if not f.name.startswith(".")],
+        notes,
         key=lambda f: f.stat().st_mtime, reverse=True
     )[:15]
     recent_html = "".join(
@@ -1751,7 +1789,7 @@ async def index():
     dirs_with_md = []
     for d in sorted(VAULT_ROOT.iterdir()):
         if d.is_dir() and not d.name.startswith(".") and not d.name.startswith("_"):
-            md_count = sum(1 for _ in d.glob("*.md"))
+            md_count = sum(1 for f in d.glob("*.md") if f.is_file() and _is_discoverable(f, ignored))
             if md_count > 0:
                 dirs_with_md.append((d.name, md_count))
 
@@ -2142,10 +2180,13 @@ async def search_api(q: str = ""):
         return JSONResponse([])
     results = []
     ql = q.lower()
+    ignored = _obsidian_ignore_patterns()
     for fp in VAULT_ROOT.rglob("*"):
         if fp.name.startswith(".") or fp.is_dir() or fp.suffix.lower() not in (".md", ".txt", ".canvas", ".yaml", ".yml"):
             continue
         rel = str(fp.relative_to(VAULT_ROOT))
+        if not _is_discoverable(fp, ignored):
+            continue
         if ql in fp.name.lower():
             results.append({"name": fp.name, "path": rel, "match": "", "score": 2})
             continue
@@ -2189,11 +2230,12 @@ async def remove_icon_api(file_path: str):
 async def search_index():
     """Return search index for client-side Fuse.js search."""
     entries = []
+    ignored = _obsidian_ignore_patterns()
     for fp in VAULT_ROOT.rglob("*"):
         if fp.name.startswith(".") or not fp.is_file():
             continue
         rel = str(fp.relative_to(VAULT_ROOT))
-        if _is_hidden(rel):
+        if not _is_discoverable(fp, ignored):
             continue
         if fp.suffix.lower() not in (".md", ".base", ".canvas"):
             continue
